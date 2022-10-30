@@ -1,0 +1,565 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Sun, 30 Oct 2022 18:05:24 +0800
+Subject: [PATCH] Change some collections
+
+
+diff --git a/src/main/java/io/papermc/paper/chunk/system/scheduling/ChunkHolderManager.java b/src/main/java/io/papermc/paper/chunk/system/scheduling/ChunkHolderManager.java
+index e5d9c6f2cbe11c2ded6d8ad111fa6a8b2086dfba..96b1b2415a22aab34a5d1557fc1d24b135a4611c 100644
+--- a/src/main/java/io/papermc/paper/chunk/system/scheduling/ChunkHolderManager.java
++++ b/src/main/java/io/papermc/paper/chunk/system/scheduling/ChunkHolderManager.java
+@@ -4,6 +4,7 @@ import ca.spottedleaf.concurrentutil.executor.standard.PrioritisedExecutor;
+ import ca.spottedleaf.concurrentutil.map.SWMRLong2ObjectHashTable;
+ import co.aikar.timings.Timing;
+ import com.google.common.collect.ImmutableList;
++import com.google.common.collect.Maps;
+ import com.google.gson.JsonArray;
+ import com.google.gson.JsonObject;
+ import com.mojang.logging.LogUtils;
+@@ -20,8 +21,8 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+ import it.unimi.dsi.fastutil.longs.LongArrayList;
+ import it.unimi.dsi.fastutil.longs.LongIterator;
+-import it.unimi.dsi.fastutil.objects.ObjectRBTreeSet;
+-import it.unimi.dsi.fastutil.objects.ReferenceLinkedOpenHashSet;
++import it.unimi.dsi.fastutil.objects.*;
++import net.himeki.mcmtfabric.parallelised.fastutil.Long2ObjectOpenConcurrentHashMap;
+ import net.minecraft.nbt.CompoundTag;
+ import io.papermc.paper.chunk.system.ChunkSystem;
+ import net.minecraft.server.MinecraftServer;
+@@ -39,13 +40,9 @@ import org.bukkit.plugin.Plugin;
+ import org.slf4j.Logger;
+ import java.io.IOException;
+ import java.text.DecimalFormat;
+-import java.util.ArrayDeque;
+-import java.util.ArrayList;
+-import java.util.Collection;
+-import java.util.Collections;
+-import java.util.Iterator;
+-import java.util.List;
+-import java.util.Objects;
++import java.util.*;
++import java.util.concurrent.ConcurrentLinkedDeque;
++import java.util.concurrent.CopyOnWriteArrayList;
+ import java.util.concurrent.TimeUnit;
+ import java.util.concurrent.atomic.AtomicBoolean;
+ import java.util.concurrent.atomic.AtomicReference;
+@@ -66,17 +63,17 @@ public final class ChunkHolderManager {
+ 
+     final ReentrantLock ticketLock = new ReentrantLock();
+ 
+-    private final SWMRLong2ObjectHashTable<NewChunkHolder> chunkHolders = new SWMRLong2ObjectHashTable<>(16384, 0.25f);
+-    private final Long2ObjectOpenHashMap<SortedArraySet<Ticket<?>>> tickets = new Long2ObjectOpenHashMap<>(8192, 0.25f);
++    private final Map<Long,NewChunkHolder> chunkHolders = Maps.newConcurrentMap();
++    private final Long2ObjectOpenHashMap<SortedArraySet<Ticket<?>>> tickets = new Long2ObjectOpenConcurrentHashMap<>();
+     // what a disaster of a name
+     // this is a map of removal tick to a map of chunks and the number of tickets a chunk has that are to expire that tick
+-    private final Long2ObjectOpenHashMap<Long2IntOpenHashMap> removeTickToChunkExpireTicketCount = new Long2ObjectOpenHashMap<>();
++    private final Long2ObjectOpenHashMap<Long2IntOpenHashMap> removeTickToChunkExpireTicketCount = new Long2ObjectOpenConcurrentHashMap<>();
+     private final ServerLevel world;
+     private final ChunkTaskScheduler taskScheduler;
+     private long currentTick;
+ 
+-    private final ArrayDeque<NewChunkHolder> pendingFullLoadUpdate = new ArrayDeque<>();
+-    private final ObjectRBTreeSet<NewChunkHolder> autoSaveQueue = new ObjectRBTreeSet<>((final NewChunkHolder c1, final NewChunkHolder c2) -> {
++    private final Deque<NewChunkHolder> pendingFullLoadUpdate = new ConcurrentLinkedDeque<>();
++    private final ObjectSortedSet<NewChunkHolder> autoSaveQueue = ObjectSortedSets.synchronize(new ObjectRBTreeSet<>((final NewChunkHolder c1, final NewChunkHolder c2) -> {
+         if (c1 == c2) {
+             return 0;
+         }
+@@ -95,7 +92,7 @@ public final class ChunkHolderManager {
+         }
+ 
+         return Long.compare(coord1, coord2);
+-    });
++    }));
+ 
+     public ChunkHolderManager(final ServerLevel world, final ChunkTaskScheduler taskScheduler) {
+         this.world = world;
+@@ -110,7 +107,7 @@ public final class ChunkHolderManager {
+ 
+     public List<ChunkHolder> getOldChunkHolders() {
+         final List<NewChunkHolder> holders = this.getChunkHolders();
+-        final List<ChunkHolder> ret = new ArrayList<>(holders.size());
++        final List<ChunkHolder> ret = new CopyOnWriteArrayList<>();
+         for (final NewChunkHolder holder : holders) {
+             ret.add(holder.vanillaChunkHolder);
+         }
+@@ -118,8 +115,8 @@ public final class ChunkHolderManager {
+     }
+ 
+     public List<NewChunkHolder> getChunkHolders() {
+-        final List<NewChunkHolder> ret = new ArrayList<>(this.chunkHolders.size());
+-        this.chunkHolders.forEachValue(ret::add);
++        final List<NewChunkHolder> ret = new CopyOnWriteArrayList<>();
++        ret.addAll(this.chunkHolders.values());
+         return ret;
+     }
+ 
+@@ -172,7 +169,7 @@ public final class ChunkHolderManager {
+     }
+ 
+     public void autoSave() {
+-        final List<NewChunkHolder> reschedule = new ArrayList<>();
++        final List<NewChunkHolder> reschedule = new CopyOnWriteArrayList<>();
+         final long currentTick = MinecraftServer.currentTickLong;
+         final long maxSaveTime = currentTick - this.world.paperConfig().chunks.autoSaveInterval.value();
+         for (int autoSaved = 0; autoSaved < this.world.paperConfig().chunks.maxAutoSaveChunksPerTick && !this.autoSaveQueue.isEmpty();) {
+@@ -784,7 +781,7 @@ public final class ChunkHolderManager {
+         }
+         if (!TickThread.isTickThread()) {
+             this.taskScheduler.scheduleChunkTask(() -> {
+-                final ArrayDeque<NewChunkHolder> pendingFullLoadUpdate = ChunkHolderManager.this.pendingFullLoadUpdate;
++                final Deque<NewChunkHolder> pendingFullLoadUpdate = ChunkHolderManager.this.pendingFullLoadUpdate;
+                 for (int i = 0, len = changedFullStatus.size(); i < len; ++i) {
+                     pendingFullLoadUpdate.add(changedFullStatus.get(i));
+                 }
+@@ -792,7 +789,7 @@ public final class ChunkHolderManager {
+                 ChunkHolderManager.this.processPendingFullUpdate();
+             }, PrioritisedExecutor.Priority.HIGHEST);
+         } else {
+-            final ArrayDeque<NewChunkHolder> pendingFullLoadUpdate = this.pendingFullLoadUpdate;
++            final Deque<NewChunkHolder> pendingFullLoadUpdate = this.pendingFullLoadUpdate;
+             for (int i = 0, len = changedFullStatus.size(); i < len; ++i) {
+                 pendingFullLoadUpdate.add(changedFullStatus.get(i));
+             }
+@@ -1039,7 +1036,7 @@ public final class ChunkHolderManager {
+ 
+     // only call on tick thread
+     protected final boolean processPendingFullUpdate() {
+-        final ArrayDeque<NewChunkHolder> pendingFullLoadUpdate = this.pendingFullLoadUpdate;
++        final Deque<NewChunkHolder> pendingFullLoadUpdate = this.pendingFullLoadUpdate;
+ 
+         boolean ret = false;
+ 
+diff --git a/src/main/java/io/papermc/paper/util/CachedLists.java b/src/main/java/io/papermc/paper/util/CachedLists.java
+index e08f4e39db4ee3fed62e37364d17dcc5c5683504..3392770de03fab3c3d45d1ec3772cca13569c99e 100644
+--- a/src/main/java/io/papermc/paper/util/CachedLists.java
++++ b/src/main/java/io/papermc/paper/util/CachedLists.java
+@@ -2,7 +2,6 @@ package io.papermc.paper.util;
+ 
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.phys.AABB;
+-import org.bukkit.Bukkit;
+ import org.bukkit.craftbukkit.util.UnsafeList;
+ import java.util.List;
+ 
+@@ -10,13 +9,9 @@ public final class CachedLists {
+ 
+     // Paper start - optimise collisions
+     static final UnsafeList<AABB> TEMP_COLLISION_LIST = new UnsafeList<>(1024);
+-    static boolean tempCollisionListInUse;
++    static final UnsafeList<Entity> TEMP_GET_ENTITIES_LIST = new UnsafeList<>(1024);
+ 
+     public static UnsafeList<AABB> getTempCollisionList() {
+-        if (!Bukkit.isPrimaryThread() || tempCollisionListInUse) {
+-            return new UnsafeList<>(16);
+-        }
+-        tempCollisionListInUse = true;
+         return TEMP_COLLISION_LIST;
+     }
+ 
+@@ -25,17 +20,11 @@ public final class CachedLists {
+             return;
+         }
+         ((UnsafeList)list).setSize(0);
+-        tempCollisionListInUse = false;
+     }
+ 
+-    static final UnsafeList<Entity> TEMP_GET_ENTITIES_LIST = new UnsafeList<>(1024);
+-    static boolean tempGetEntitiesListInUse;
++
+ 
+     public static UnsafeList<Entity> getTempGetEntitiesList() {
+-        if (!Bukkit.isPrimaryThread() || tempGetEntitiesListInUse) {
+-            return new UnsafeList<>(16);
+-        }
+-        tempGetEntitiesListInUse = true;
+         return TEMP_GET_ENTITIES_LIST;
+     }
+ 
+@@ -44,7 +33,6 @@ public final class CachedLists {
+             return;
+         }
+         ((UnsafeList)list).setSize(0);
+-        tempGetEntitiesListInUse = false;
+     }
+     // Paper end - optimise collisions
+ 
+diff --git a/src/main/java/io/papermc/paper/util/CollisionUtil.java b/src/main/java/io/papermc/paper/util/CollisionUtil.java
+index a87f6380b2c387fb0cdd40d5087b5c93492e3c88..462a7f3bf57957661f22efb4c4f933e6eeb7815c 100644
+--- a/src/main/java/io/papermc/paper/util/CollisionUtil.java
++++ b/src/main/java/io/papermc/paper/util/CollisionUtil.java
+@@ -222,8 +222,7 @@ public final class CollisionUtil {
+     }
+ 
+     public static double performCollisionsX(final AABB currentBoundingBox, double value, final List<AABB> potentialCollisions) {
+-        for (int i = 0, len = potentialCollisions.size(); i < len; ++i) {
+-            final AABB target = potentialCollisions.get(i);
++        for (final AABB target : potentialCollisions) {
+             value = collideX(target, currentBoundingBox, value);
+         }
+ 
+@@ -231,8 +230,7 @@ public final class CollisionUtil {
+     }
+ 
+     public static double performCollisionsY(final AABB currentBoundingBox, double value, final List<AABB> potentialCollisions) {
+-        for (int i = 0, len = potentialCollisions.size(); i < len; ++i) {
+-            final AABB target = potentialCollisions.get(i);
++        for (final AABB target : potentialCollisions) {
+             value = collideY(target, currentBoundingBox, value);
+         }
+ 
+@@ -240,8 +238,7 @@ public final class CollisionUtil {
+     }
+ 
+     public static double performCollisionsZ(final AABB currentBoundingBox, double value, final List<AABB> potentialCollisions) {
+-        for (int i = 0, len = potentialCollisions.size(); i < len; ++i) {
+-            final AABB target = potentialCollisions.get(i);
++        for (final AABB target : potentialCollisions) {
+             value = collideZ(target, currentBoundingBox, value);
+         }
+ 
+@@ -317,8 +314,7 @@ public final class CollisionUtil {
+ 
+             boolean ret = false;
+ 
+-            for (int i = 0, len = boxes.size(); i < len; ++i) {
+-                final AABB box = boxes.get(i);
++            for (final AABB box : boxes) {
+                 if (voxelShapeIntersect(box, aabb) && !isEmpty(box)) {
+                     list.add(box);
+                     ret = true;
+@@ -350,8 +346,7 @@ public final class CollisionUtil {
+             }
+         } else {
+             final List<AABB> boxes = shape.toAabbs();
+-            for (int i = 0, len = boxes.size(); i < len; ++i) {
+-                final AABB box = boxes.get(i);
++            for (final AABB box : boxes) {
+                 if (!isEmpty(box)) {
+                     list.add(box);
+                 }
+@@ -827,9 +822,7 @@ public final class CollisionUtil {
+                 entityGetter.getHardCollidingEntities(entity, aabb, predicate, entities);
+             }
+ 
+-            for (int i = 0, len = entities.size(); i < len; ++i) {
+-                final Entity otherEntity = entities.get(i);
+-
++            for (final Entity otherEntity : entities) {
+                 if ((entity == null && otherEntity.canBeCollidedWith()) || (entity != null && entity.canCollideWith(otherEntity))) {
+                     if (checkOnly) {
+                         return true;
+diff --git a/src/main/java/net/minecraft/server/level/ChunkHolder.java b/src/main/java/net/minecraft/server/level/ChunkHolder.java
+index bc46479fd0622a90fd98ac88f92b2840a22a2d04..7a426bee97e762a1d2a1183ac894b520ba0d5478 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkHolder.java
++++ b/src/main/java/net/minecraft/server/level/ChunkHolder.java
+@@ -14,6 +14,8 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
+ import java.util.function.IntConsumer;
+ import java.util.function.IntSupplier;
+ import javax.annotation.Nullable;
++
++import net.himeki.mcmtfabric.parallelised.fastutil.ConcurrentShortHashSet;
+ import net.minecraft.Util;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.SectionPos;
+@@ -233,7 +235,7 @@ public class ChunkHolder {
+             if (i < 0 || i >= this.changedBlocksPerSection.length) return; // CraftBukkit - SPIGOT-6086, SPIGOT-6296
+             if (this.changedBlocksPerSection[i] == null) {
+                 this.hasChangedSections = true; this.addToBroadcastMap(); // Paper - optimise chunk tick iteration
+-                this.changedBlocksPerSection[i] = new ShortOpenHashSet();
++                this.changedBlocksPerSection[i] = new ConcurrentShortHashSet();
+             }
+ 
+             this.changedBlocksPerSection[i].add(SectionPos.sectionRelativePos(pos));
+diff --git a/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java b/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java
+index bcc4c1af0fe153ed87e55706a1a6a5c6e945fec8..c1e5c56577f2f5fa043158717e850198a8b55055 100644
+--- a/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java
++++ b/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java
+@@ -1018,8 +1018,13 @@ public abstract class BlockBehaviour {
+             this.getBlock().randomTick(this.asState(), world, pos, random);
+         }
+ 
++        private static final Object INSIDE_LOCK = new Object();
++
+         public void entityInside(Level world, BlockPos pos, Entity entity) {
+-            this.getBlock().entityInside(this.asState(), world, pos, entity);
++            //Forked from mcmt
++            synchronized (INSIDE_LOCK){
++                this.getBlock().entityInside(this.asState(), world, pos, entity);
++            }
+         }
+ 
+         public void spawnAfterBreak(ServerLevel world, BlockPos pos, ItemStack stack, boolean dropExperience) {
+diff --git a/src/main/java/net/minecraft/world/ticks/LevelTicks.java b/src/main/java/net/minecraft/world/ticks/LevelTicks.java
+index 5dea8414964e0d2d1fb15a6baa27227e9722bfc7..00813817a93927716632be10c369811810880ae4 100644
+--- a/src/main/java/net/minecraft/world/ticks/LevelTicks.java
++++ b/src/main/java/net/minecraft/world/ticks/LevelTicks.java
+@@ -53,7 +53,7 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+         this.profiler = profilerGetter;
+     }
+ 
+-    public void addContainer(ChunkPos pos, LevelChunkTicks<T> scheduler) {
++    public synchronized void addContainer(ChunkPos pos, LevelChunkTicks<T> scheduler) {
+         long l = pos.toLong();
+         this.allContainers.put(l, scheduler);
+         ScheduledTick<T> scheduledTick = scheduler.peek();
+@@ -64,7 +64,7 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+         scheduler.setOnTickAdded(this.chunkScheduleUpdater);
+     }
+ 
+-    public void removeContainer(ChunkPos pos) {
++    public synchronized void removeContainer(ChunkPos pos) {
+         long l = pos.toLong();
+         LevelChunkTicks<T> levelChunkTicks = this.allContainers.remove(l);
+         this.nextTickForContainer.remove(l);
+@@ -75,7 +75,7 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+     }
+ 
+     @Override
+-    public void schedule(ScheduledTick<T> orderedTick) {
++    public synchronized void schedule(ScheduledTick<T> orderedTick) {
+         long l = ChunkPos.asLong(orderedTick.pos());
+         LevelChunkTicks<T> levelChunkTicks = this.allContainers.get(l);
+         if (levelChunkTicks == null) {
+@@ -85,7 +85,7 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+         }
+     }
+ 
+-    public void tick(long time, int maxTicks, BiConsumer<BlockPos, T> ticker) {
++    public synchronized void tick(long time, int maxTicks, BiConsumer<BlockPos, T> ticker) {
+         //ProfilerFiller profilerFiller = this.profiler.get(); // Purpur
+         //profilerFiller.push("collect"); // Purpur
+         this.collectTicks(time, maxTicks, null); // Purpur
+@@ -207,13 +207,13 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+     }
+ 
+     @Override
+-    public boolean hasScheduledTick(BlockPos pos, T type) {
++    public synchronized boolean hasScheduledTick(BlockPos pos, T type) {
+         LevelChunkTicks<T> levelChunkTicks = this.allContainers.get(ChunkPos.asLong(pos));
+         return levelChunkTicks != null && levelChunkTicks.hasScheduledTick(pos, type);
+     }
+ 
+     @Override
+-    public boolean willTickThisTick(BlockPos pos, T type) {
++    public synchronized boolean willTickThisTick(BlockPos pos, T type) {
+         this.calculateTickSetIfNeeded();
+         return this.toRunThisTickSet.contains(ScheduledTick.probe(type, pos));
+     }
+@@ -243,7 +243,7 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+ 
+     }
+ 
+-    public void clearArea(BoundingBox box) {
++    public synchronized void clearArea(BoundingBox box) {
+         Predicate<ScheduledTick<T>> predicate = (tick) -> {
+             return box.isInside(tick.pos());
+         };
+@@ -264,7 +264,7 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+         this.toRunThisTick.removeIf(predicate);
+     }
+ 
+-    public void copyArea(BoundingBox box, Vec3i offset) {
++    public synchronized void copyArea(BoundingBox box, Vec3i offset) {
+         List<ScheduledTick<T>> list = new ArrayList<>();
+         Predicate<ScheduledTick<T>> predicate = (tick) -> {
+             return box.isInside(tick.pos());
+@@ -283,7 +283,7 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+     }
+ 
+     @Override
+-    public int count() {
++    public synchronized int count() {
+         return this.allContainers.values().stream().mapToInt(TickAccess::count).sum();
+     }
+ 
+diff --git a/src/main/java/org/bukkit/craftbukkit/util/LazyPlayerSet.java b/src/main/java/org/bukkit/craftbukkit/util/LazyPlayerSet.java
+index 5c4c0ba05f10d2d83b22d3e86805cfa85c3b50a9..2d34eabb0aeb49788cd2a71297687df066a77791 100644
+--- a/src/main/java/org/bukkit/craftbukkit/util/LazyPlayerSet.java
++++ b/src/main/java/org/bukkit/craftbukkit/util/LazyPlayerSet.java
+@@ -23,6 +23,7 @@ public class LazyPlayerSet extends LazyHashSet<Player> {
+         // Paper start
+         return makePlayerSet(this.server);
+     }
++
+     public static HashSet<Player> makePlayerSet(final MinecraftServer server) {
+         // Paper end
+         List<ServerPlayer> players = server.getPlayerList().players;
+diff --git a/src/main/java/org/bukkit/craftbukkit/util/UnsafeList.java b/src/main/java/org/bukkit/craftbukkit/util/UnsafeList.java
+index e38e57b1f9ef27020de35d7ddcb36a663140f880..fcb5dedb80459aff9b1731b15ee3e6f0d41f5b9e 100644
+--- a/src/main/java/org/bukkit/craftbukkit/util/UnsafeList.java
++++ b/src/main/java/org/bukkit/craftbukkit/util/UnsafeList.java
+@@ -44,18 +44,18 @@ public class UnsafeList<E> extends AbstractList<E> implements List<E>, RandomAcc
+     }
+ 
+     @Override
+-    public E get(int index) {
++    public synchronized E get(int index) {
+         this.rangeCheck(index);
+ 
+         return (E) this.data[index];
+     }
+ 
+-    public E unsafeGet(int index) {
++    public synchronized E unsafeGet(int index) {
+         return (E) this.data[index];
+     }
+ 
+     @Override
+-    public E set(int index, E element) {
++    public synchronized E set(int index, E element) {
+         this.rangeCheck(index);
+ 
+         E old = (E) this.data[index];
+@@ -64,14 +64,14 @@ public class UnsafeList<E> extends AbstractList<E> implements List<E>, RandomAcc
+     }
+ 
+     @Override
+-    public boolean add(E element) {
++    public synchronized boolean add(E element) {
+         this.growIfNeeded();
+         this.data[this.size++] = element;
+         return true;
+     }
+ 
+     @Override
+-    public void add(int index, E element) {
++    public synchronized void add(int index, E element) {
+         this.growIfNeeded();
+         System.arraycopy(data, index, data, index + 1, this.size - index);
+         this.data[index] = element;
+@@ -79,7 +79,7 @@ public class UnsafeList<E> extends AbstractList<E> implements List<E>, RandomAcc
+     }
+ 
+     @Override
+-    public E remove(int index) {
++    public synchronized E remove(int index) {
+         this.rangeCheck(index);
+ 
+         E old = (E) this.data[index];
+@@ -93,7 +93,7 @@ public class UnsafeList<E> extends AbstractList<E> implements List<E>, RandomAcc
+     }
+ 
+     @Override
+-    public boolean remove(Object o) {
++    public synchronized boolean remove(Object o) {
+         int index = this.indexOf(o);
+         if (index >= 0) {
+             this.remove(index);
+@@ -104,7 +104,7 @@ public class UnsafeList<E> extends AbstractList<E> implements List<E>, RandomAcc
+     }
+ 
+     @Override
+-    public int indexOf(Object o) {
++    public synchronized int indexOf(Object o) {
+         for (int i = 0; i < this.size; i++) {
+             if (o == this.data[i] || o.equals(this.data[i])) {
+                 return i;
+@@ -115,20 +115,20 @@ public class UnsafeList<E> extends AbstractList<E> implements List<E>, RandomAcc
+     }
+ 
+     @Override
+-    public boolean contains(Object o) {
++    public synchronized boolean contains(Object o) {
+         return this.indexOf(o) >= 0;
+     }
+ 
+     // Paper start
+     protected transient int maxSize;
+-    public void setSize(int size) {
++    public synchronized void setSize(int size) {
+         if (this.maxSize < this.size) {
+             this.maxSize = this.size;
+         }
+         this.size = size;
+     }
+ 
+-    public void completeReset() {
++    public synchronized void completeReset() {
+         if (this.data != null) {
+             Arrays.fill(this.data, 0, Math.max(this.size, this.maxSize), null);
+         }
+@@ -146,7 +146,7 @@ public class UnsafeList<E> extends AbstractList<E> implements List<E>, RandomAcc
+     // Paper end
+ 
+     @Override
+-    public void clear() {
++    public synchronized void clear() {
+         // Create new array to reset memory usage to initial capacity
+         this.size = 0;
+ 
+@@ -161,7 +161,7 @@ public class UnsafeList<E> extends AbstractList<E> implements List<E>, RandomAcc
+     }
+ 
+     // actually rounds up to nearest power of two
+-    public void trimToSize() {
++    public synchronized void trimToSize() {
+         int old = data.length;
+         int rounded = Integer.highestOneBit(this.size - 1) << 1;
+         if (rounded < old) {
+@@ -170,17 +170,17 @@ public class UnsafeList<E> extends AbstractList<E> implements List<E>, RandomAcc
+     }
+ 
+     @Override
+-    public int size() {
++    public synchronized int size() {
+         return this.size;
+     }
+ 
+     @Override
+-    public boolean isEmpty() {
++    public synchronized boolean isEmpty() {
+         return this.size == 0;
+     }
+ 
+     @Override
+-    public Object clone() throws CloneNotSupportedException {
++    public synchronized Object clone() throws CloneNotSupportedException {
+         UnsafeList<E> copy = (UnsafeList<E>) super.clone();
+         copy.data = Arrays.copyOf(data, size);
+         copy.size = this.size;
+@@ -193,7 +193,7 @@ public class UnsafeList<E> extends AbstractList<E> implements List<E>, RandomAcc
+     }
+ 
+     @Override
+-    public Iterator<E> iterator() {
++    public synchronized Iterator<E> iterator() {
+         // Try to find an iterator that isn't in use
+         for (Iterator iter : this.iterPool) {
+             if (!((Itr) iter).valid) {
+@@ -265,7 +265,7 @@ public class UnsafeList<E> extends AbstractList<E> implements List<E>, RandomAcc
+         int expectedModCount = modCount;
+         public boolean valid = true;
+ 
+-        public void reset() {
++        public synchronized void reset() {
+             this.index = 0;
+             this.lastRet = -1;
+             this.expectedModCount = modCount;
+@@ -273,13 +273,13 @@ public class UnsafeList<E> extends AbstractList<E> implements List<E>, RandomAcc
+         }
+ 
+         @Override
+-        public boolean hasNext() {
++        public synchronized boolean hasNext() {
+             this.valid = this.index != UnsafeList.this.size;
+             return this.valid;
+         }
+ 
+         @Override
+-        public E next() {
++        public synchronized E next() {
+             if (modCount != this.expectedModCount) {
+                 throw new ConcurrentModificationException();
+             }
+@@ -298,7 +298,7 @@ public class UnsafeList<E> extends AbstractList<E> implements List<E>, RandomAcc
+         }
+ 
+         @Override
+-        public void remove() {
++        public synchronized void remove() {
+             if (this.lastRet < 0) {
+                 throw new IllegalStateException();
+             }
