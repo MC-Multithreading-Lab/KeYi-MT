@@ -1,6 +1,6 @@
 <img src="https://user-images.githubusercontent.com/83630775/196994084-2c53ac23-f4be-4b90-b6fc-1b0ba65ea1b8.png" alt="KeYi's logo" align="right" width="400">
 <div align="left">
-  <h4>Also available in: <a href="https://github.com/KeYiMC/KeYi/blob/master/README_ZH.md">中文</a></h4>
+  <h4>Also available in: <a href="https://github.com/KeYiMC/KeYi/blob/develop/1.19.2/README_ZH.md">中文</a></h4>
   <h1>KeYi</h1>
   <h3>⚡ The next generation Minecraft server software aims to the balance of performance and stability.</h3>
   <h5>This project is still under heavy development, use it at your own risk!</h5>
