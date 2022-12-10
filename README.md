@@ -7,7 +7,7 @@
   <i><h5>KeYi, is the Chinese word "可以", means some thing is very OK!</h5></i>
 
 [![Discord](https://img.shields.io/discord/1030133252134027304?color=%235865f2&label=Discord&logo=discord&logoColor=white&style=for-the-badge)](https://discord.gg/Sm2NsY5dpV)
-[![Tencent QQ](https://img.shields.io/badge/Tencent%23QQ-%2312B7F5?style=for-the-badge&logo=tencentqq&logoColor=white)](https://jq.qq.com/?_wv=1027&k=i2MG7npf)
+[![Tencent QQ](https://img.shields.io/badge/Tencent%23QQ-%2312B7F5?style=for-the-badge&logo=tencentqq&logoColor=white)](https://jq.qq.com/?_wv=1027&k=tNDYZa7z)
 </div>
 
 # Why another fork?
