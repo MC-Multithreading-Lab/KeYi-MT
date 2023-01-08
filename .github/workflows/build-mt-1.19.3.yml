@@ -45,4 +45,4 @@ jobs:
           automatic_release_tag: "mt-1.19.3"
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           files: "build/libs/keyi-mt-${{ env.MC_VERSION }}-${{ env.workflow }}.jar"
-          prerelease: true
+          prerelease: false
