@@ -1,0 +1,48 @@
+name: Build (multithreaded/1.19.3)
+on:
+  push:
+    branches:
+      - "mt/1.19.3"
+
+env:
+  MC_VERSION: "1.19.3"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set env
+        run: |
+          echo "workflow=$GITHUB_RUN_NUMBER" >> $GITHUB_ENV
+          echo "ref=$GITHUB_REF_NAME" >> $GITHUB_ENV
+      - name: Checkout Git Repository
+        uses: actions/checkout@v3
+      - name: Validate Gradle Wrapper
+        uses: gradle/wrapper-validation-action@master
+      - name: Set up JDK
+        uses: graalvm/setup-graalvm@v1
+        with:
+          version: "latest"
+          java-version: 17
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          cache: gradle
+      - name: Configure Git
+        run: |
+          git config --global user.name "KeYi CI"
+          git config --global user.email "ci@keyimc.cc"
+          chmod u+x gradlew
+      - name: Apply patches
+        run: |
+          ./gradlew -Dorg.gradle.jvmargs="-Dgraal.CompilerConfiguration=enterprise -Dgraal.UsePriorityInlining=true -Dgraal.Vectorization=true -Dgraal.OptDuplication=true --add-modules jdk.incubator.vector" applyPatches --stacktrace --no-daemon
+      - name: Build a paperclip jar
+        run: |
+          ./gradlew -Dorg.gradle.jvmargs="-Dgraal.CompilerConfiguration=enterprise -Dgraal.UsePriorityInlining=true -Dgraal.Vectorization=true -Dgraal.OptDuplication=true --add-modules jdk.incubator.vector" createReobfPaperclipJar --stacktrace --no-daemon
+      - name: Rename Jar
+        run: "mv build/libs/keyi-paperclip-${{ env.MC_VERSION }}-R0.1-SNAPSHOT-reobf.jar build/libs/keyi-mt-${{ env.MC_VERSION }}-${{ env.workflow }}.jar"
+      - name: Release Artifacts
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          title: "mt/1.19.3 #${{ env.workflow }}"
+          automatic_release_tag: "mt-1.19.3"
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          files: "build/libs/keyi-mt-${{ env.MC_VERSION }}-${{ env.workflow }}.jar"
+          prerelease: true
