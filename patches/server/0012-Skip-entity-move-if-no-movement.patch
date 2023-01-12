@@ -9,12 +9,12 @@ Original code by RelativityMC, licensed under MIT
 You can find the original code on https://github.com/RelativityMC/VMP-fabric (Yarn mappings)
 
 diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
-index e825f4772d029998f04075f6491be3e456a91760..282973c81d2966588348e40e1179715fb460810f 100644
+index 73325488e138c8dca81d06c5d8759401f376d273..85542015ef7376baf0cfaa090265c1286459788b 100644
 --- a/src/main/java/net/minecraft/world/entity/Entity.java
 +++ b/src/main/java/net/minecraft/world/entity/Entity.java
 @@ -399,6 +399,7 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource {
-     private UUID originWorld;
      public boolean freezeLocked = false; // Paper - Freeze Tick Lock API
+     public boolean collidingWithWorldBorder; // Paper
      public @Nullable Boolean immuneToFire = null; // Purpur - Fire immune API
 +    private boolean boundingBoxChanged = false; // KeYi
  
@@ -34,7 +34,7 @@ index e825f4772d029998f04075f6491be3e456a91760..282973c81d2966588348e40e1179715f
          // Paper start - detailed watchdog information
          io.papermc.paper.util.TickThread.ensureTickThread("Cannot move an entity off-main");
          synchronized (this.posLock) {
-@@ -3844,6 +3852,7 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource {
+@@ -3853,6 +3861,7 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource {
      }
  
      public final void setBoundingBox(AABB boundingBox) {

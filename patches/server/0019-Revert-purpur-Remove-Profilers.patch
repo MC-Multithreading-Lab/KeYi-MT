@@ -43,7 +43,7 @@ index e42eb93fd9f6f51ff5bb4b14a2304d4ffcdd8441..8013dd333e27aa5fd0beb431fa32491e
          return executedUnloadTask | canSaveChunk | canSaveEntities | canSavePOI ? new SaveStat(executedUnloadTask || canSaveChunk, canSaveEntities, canSavePOI): null;
      }
 diff --git a/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java b/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java
-index 04ca6d27a13706fbddc708df0fcca42b4098bcba..d03551e81e3ef37935cb1d963aba3df316f48ef5 100644
+index 6bf14183a3fcd2b3d166752ce33240d2ff1ffa7c..01bdf134fc21220ab7ecca51f2dcd51c0b466bba 100644
 --- a/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java
 +++ b/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java
 @@ -67,14 +67,14 @@ public class GlobalConfiguration extends ConfigurationPart {
@@ -64,29 +64,18 @@ index 04ca6d27a13706fbddc708df0fcca42b4098bcba..d03551e81e3ef37935cb1d963aba3df3
          }
      }
 diff --git a/src/main/java/net/minecraft/network/protocol/PacketUtils.java b/src/main/java/net/minecraft/network/protocol/PacketUtils.java
-index 767623a35dda71d77c65602e10ef2b3f0ae743f1..27d4aa45e585842c04491839826d405d6f447f0e 100644
+index b693a26ac6a5729bf91aca9ca0ae332b904d436f..27d4aa45e585842c04491839826d405d6f447f0e 100644
 --- a/src/main/java/net/minecraft/network/protocol/PacketUtils.java
 +++ b/src/main/java/net/minecraft/network/protocol/PacketUtils.java
-@@ -47,9 +47,8 @@ public class PacketUtils {
+@@ -47,7 +47,7 @@ public class PacketUtils {
                  if (MinecraftServer.getServer().hasStopped() || (listener instanceof ServerGamePacketListenerImpl && ((ServerGamePacketListenerImpl) listener).processedDisconnect)) return; // CraftBukkit, MC-142590
                  if (listener.getConnection().isConnected()) {
                      co.aikar.timings.Timing timing = co.aikar.timings.MinecraftTimings.getPacketTiming(packet); // Paper - timings
--                    //try (co.aikar.timings.Timing ignored = timing.startTiming()) { // Paper - timings // Purpur
+-                    try { // Paper - timings // Purpur
 +                    try (co.aikar.timings.Timing ignored = timing.startTiming()) { // Paper - timings
                          packet.handle(listener);
--                    /* // Purpur
                      } catch (Exception exception) {
                          net.minecraft.network.Connection networkmanager = listener.getConnection();
-                         String playerIP = io.papermc.paper.configuration.GlobalConfiguration.get().logging.logPlayerIpAddresses ? String.valueOf(networkmanager.getRemoteAddress()) : "<ip address withheld>"; // Paper
-@@ -61,7 +60,7 @@ public class PacketUtils {
-                         net.minecraft.network.chat.Component error = net.minecraft.network.chat.Component.literal("Packet processing error");
-                         networkmanager.send(new net.minecraft.network.protocol.game.ClientboundDisconnectPacket(error), net.minecraft.network.PacketSendListener.thenRun(() -> networkmanager.disconnect(error)));
-                         networkmanager.setReadOnly();
--                    } */ // Purpur
-+                    }
-                 } else {
-                     PacketUtils.LOGGER.debug("Ignoring packet due to disconnection: {}", packet);
-                 }
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
 index cea4447aad2d64db56a76e4ba180dc7326d2e13b..8adb0f0c5ff56e578786437afdb07668955fe7c0 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
@@ -1085,10 +1074,10 @@ index b396a329e753f42b3878736b6b14bafda02d3744..077ff3d7620e3c48aca59a92014dbdb7
  
          } else if (close) { chunkproviderserver.close(false); } // Paper - rewrite chunk system
 diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index a37849179a34d0ba5997f7d83c10bd1851135835..7c1534177aa86c48592dd27895fb3a553bec686f 100644
+index a8e205af936efe0909c94575e3b7f8ca50cead2f..25bb1b1938c260d531f21037507122c85c440ddf 100644
 --- a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -2584,7 +2584,7 @@ public class ServerGamePacketListenerImpl implements ServerPlayerConnection, Tic
+@@ -2586,7 +2586,7 @@ public class ServerGamePacketListenerImpl implements ServerPlayerConnection, Tic
              }
          }
          // Paper End
@@ -1097,7 +1086,7 @@ index a37849179a34d0ba5997f7d83c10bd1851135835..7c1534177aa86c48592dd27895fb3a55
          if ( org.spigotmc.SpigotConfig.logCommands ) // Spigot
          this.LOGGER.info(this.player.getScoreboardName() + " issued server command: " + s);
  
-@@ -2594,7 +2594,7 @@ public class ServerGamePacketListenerImpl implements ServerPlayerConnection, Tic
+@@ -2596,7 +2596,7 @@ public class ServerGamePacketListenerImpl implements ServerPlayerConnection, Tic
          this.cserver.getPluginManager().callEvent(event);
  
          if (event.isCancelled()) {
@@ -1106,7 +1095,7 @@ index a37849179a34d0ba5997f7d83c10bd1851135835..7c1534177aa86c48592dd27895fb3a55
              return;
          }
  
-@@ -2607,7 +2607,7 @@ public class ServerGamePacketListenerImpl implements ServerPlayerConnection, Tic
+@@ -2609,7 +2609,7 @@ public class ServerGamePacketListenerImpl implements ServerPlayerConnection, Tic
              java.util.logging.Logger.getLogger(ServerGamePacketListenerImpl.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
              return;
          } finally {
@@ -1116,10 +1105,10 @@ index a37849179a34d0ba5997f7d83c10bd1851135835..7c1534177aa86c48592dd27895fb3a55
      }
      // CraftBukkit end
 diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
-index 7d5ba99a674855967256b74fd9fd21749dcde8a3..f3fc72e1ddbb65daaab3b5fe1c6210434a434050 100644
+index b0fa557e756d1e30097ad5a72e679d8844b34cd9..47a2c5eb799580501f5b31c85a569fa342646d8b 100644
 --- a/src/main/java/net/minecraft/server/players/PlayerList.java
 +++ b/src/main/java/net/minecraft/server/players/PlayerList.java
-@@ -1220,7 +1220,7 @@ public abstract class PlayerList {
+@@ -1226,7 +1226,7 @@ public abstract class PlayerList {
  
      public void saveAll(int interval) {
          io.papermc.paper.util.MCUtil.ensureMain("Save Players" , () -> { // Paper - Ensure main
@@ -1128,7 +1117,7 @@ index 7d5ba99a674855967256b74fd9fd21749dcde8a3..f3fc72e1ddbb65daaab3b5fe1c621043
          int numSaved = 0;
          long now = MinecraftServer.currentTick;
          for (int i = 0; i < this.players.size(); ++i) {
-@@ -1231,7 +1231,7 @@ public abstract class PlayerList {
+@@ -1237,7 +1237,7 @@ public abstract class PlayerList {
              }
              // Paper end
          }
@@ -1438,7 +1427,7 @@ index a6e9e503a496c18e2501b03ec84f4600c134a50c..138407c2d4b0bc55ddb9aac5d2aa3eda
          // Paper end - add timings for scoreboard search
      }
 diff --git a/src/main/java/org/spigotmc/ActivationRange.java b/src/main/java/org/spigotmc/ActivationRange.java
-index fe830a419c81811f0a72add63a3f09a94392e4a7..383a13a26ee9445fa6201770bb9bef274d72283a 100644
+index 665625c69b93a2568b1f2218a0db39da435d8c99..00744aceb25ddc689b8c5ed90ae27e1ea28057ad 100644
 --- a/src/main/java/org/spigotmc/ActivationRange.java
 +++ b/src/main/java/org/spigotmc/ActivationRange.java
 @@ -170,7 +170,7 @@ public class ActivationRange
