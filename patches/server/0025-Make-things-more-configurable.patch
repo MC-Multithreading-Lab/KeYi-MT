@@ -1,0 +1,129 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: nostalgic853 <yuu8583@proton.me>
+Date: Sun, 15 Jan 2023 03:00:29 +0800
+Subject: [PATCH] Make things more configurable
+
+
+diff --git a/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java b/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java
+index 5e01dfe18789ce3815ce1c36233ef89265584d44..ed2d911f5393abb6c398c909c4667867034aaf87 100644
+--- a/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java
++++ b/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java
+@@ -62,6 +62,9 @@ public class KGlobalConfig {
+     public boolean spigotDropsMergingMechanism = true;
+     public boolean lowActivePoiFindingForEntitiesInVehicle = true;
+     public boolean useFastItemMergingRaytracing = true;
++    public boolean useOptimizedVarInts = true;
++    public boolean saveFirework = false;
++    public boolean fastSpeedCheck = true;
+ 
+     // Bug-fixes settings
+     public boolean fixTripwireDuping = true;
+@@ -79,6 +82,9 @@ public class KGlobalConfig {
+         spigotDropsMergingMechanism = get("performance.use-spigot-drops-merging-mechanism", spigotDropsMergingMechanism);
+         lowActivePoiFindingForEntitiesInVehicle = get("performance.low-active-poi-finding-for-entities-in-vehicle", lowActivePoiFindingForEntitiesInVehicle);
+         useFastItemMergingRaytracing = get("performance.use-fast-item-merge-raytracing", useFastItemMergingRaytracing);
++        useOptimizedVarInts = get("performance.use-optimized-var-ints", useOptimizedVarInts);
++        saveFirework = get("performance.save-firework", saveFirework);
++        fastSpeedCheck = get("performance.fast-speed-check", fastSpeedCheck);
+ 
+         // Bug-fixes settings
+         fixTripwireDuping = get("bug-fixes.fix-tripwire-duping", fixTripwireDuping);
+@@ -99,6 +105,9 @@ public class KGlobalConfig {
+         fileConfig.setComment("performance.use-spigot-drops-merging-mechanism", " Should large drops stack should be merged into smaller drops stack?");
+         fileConfig.setComment("performance.low-active-poi-finding-for-entities-in-vehicle", " Should the server wait more 10s to do POI finding of entities stuck in a vehicle?");
+         fileConfig.setComment("performance.use-fast-item-merge-raytracing", " Skip some allocations to make some operations faster.");
++        fileConfig.setComment("performance.use-optimized-var-ints", " Use an optimized var ints method from Paper's unmerged PR.");
++        fileConfig.setComment("performance.save-firework", " Should fireworks to be saved?");
++        fileConfig.setComment("performance.fast-speed-check", " Use a faster speed check method.");
+ 
+         // Bug-fixes settings
+         fileConfig.setComment("bug-fixes.fix-tripwire-duping", " Should Paper's tripwire duping fix be enabled? By disabling this you are able to duping tripwires!");
+diff --git a/src/main/java/net/minecraft/network/FriendlyByteBuf.java b/src/main/java/net/minecraft/network/FriendlyByteBuf.java
+index 2e1cf850f1b26f25ea09178941f4c789d65d851f..6a303f47e33c128d6de299f4ea2d49049baeb08e 100644
+--- a/src/main/java/net/minecraft/network/FriendlyByteBuf.java
++++ b/src/main/java/net/minecraft/network/FriendlyByteBuf.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.network;
+ 
++import cc.keyimc.keyi.config.KGlobalConfig;
+ import com.google.common.annotations.VisibleForTesting;
+ import com.google.common.collect.Lists;
+ import com.google.common.collect.Maps;
+@@ -98,13 +99,25 @@ public class FriendlyByteBuf extends ByteBuf {
+     // Paper start - Optimize VarInts
+     private static final int[] VARINT_EXACT_BYTE_LENGTHS = new int[33];
+     static {
+-        for (int i = 0; i <= 32; ++i) {
+-            VARINT_EXACT_BYTE_LENGTHS[i] = (int) Math.ceil((31d - (i - 1)) / 7d);
++        if (KGlobalConfig.getInstance().useOptimizedVarInts) {
++            for (int i = 0; i <= 32; ++i) {
++                VARINT_EXACT_BYTE_LENGTHS[i] = (int) Math.ceil((31d - (i - 1)) / 7d);
++            }
++            VARINT_EXACT_BYTE_LENGTHS[32] = 1; // Special case for the number 0.
+         }
+-        VARINT_EXACT_BYTE_LENGTHS[32] = 1; // Special case for the number 0.
+     }
+     public static int getVarIntSize(int value) {
+-        return VARINT_EXACT_BYTE_LENGTHS[Integer.numberOfLeadingZeros(value)]; // Paper - Optimize VarInts
++        if (KGlobalConfig.getInstance().useOptimizedVarInts) {
++            return VARINT_EXACT_BYTE_LENGTHS[Integer.numberOfLeadingZeros(value)]; // Paper - Optimize VarInts
++        } else {
++            for (int j = 1; j < 5; ++j) {
++                if ((value & -1 << j * 7) == 0) {
++                    return j;
++                }
++            }
++
++            return 5;
++        }
+     }
+     // Paper end - Optimize VarInts
+ 
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 85542015ef7376baf0cfaa090265c1286459788b..af5addc0b647ebb0033048fdc48866071a13f829 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.world.entity;
+ 
++import cc.keyimc.keyi.config.KGlobalConfig;
+ import com.google.common.collect.ImmutableList;
+ import com.google.common.collect.ImmutableList.Builder;
+ import com.google.common.collect.Iterables;
+@@ -1206,8 +1207,12 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource {
+                 this.tryCheckInsideBlocks();
+                 // KeYi start - Fast speed check
+                 float f2;
+-                if (this.getDeltaMovement().x == 0 && this.getDeltaMovement().z == 0) {
+-                    f2 = 1;
++                if (KGlobalConfig.getInstance().fastSpeedCheck) {
++                    if (this.getDeltaMovement().x == 0 && this.getDeltaMovement().z == 0) {
++                        f2 = 1;
++                    } else {
++                        f2 = this.getBlockSpeedFactor();
++                    }
+                 } else {
+                     f2 = this.getBlockSpeedFactor();
+                 }
+diff --git a/src/main/java/net/minecraft/world/entity/projectile/FireworkRocketEntity.java b/src/main/java/net/minecraft/world/entity/projectile/FireworkRocketEntity.java
+index 0b664dfef68b1e3905c9d8451602abf9cd9eafe6..0cd2b587ee4c2c565d660a5e04c77ecec9d597b5 100644
+--- a/src/main/java/net/minecraft/world/entity/projectile/FireworkRocketEntity.java
++++ b/src/main/java/net/minecraft/world/entity/projectile/FireworkRocketEntity.java
+@@ -4,6 +4,8 @@ import java.util.Iterator;
+ import java.util.List;
+ import java.util.OptionalInt;
+ import javax.annotation.Nullable;
++
++import cc.keyimc.keyi.config.KGlobalConfig;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.particles.ParticleTypes;
+ import net.minecraft.nbt.CompoundTag;
+@@ -362,7 +364,7 @@ public class FireworkRocketEntity extends Projectile implements ItemSupplier {
+     // KeYi start
+     @Override
+     public boolean shouldBeSaved() {
+-        return false;
++        return KGlobalConfig.getInstance().saveFirework;
+     }
+     // KeYi end
+ }
