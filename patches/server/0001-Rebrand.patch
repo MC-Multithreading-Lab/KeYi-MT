@@ -166,7 +166,7 @@ index fba5dbdb7bcbb55400ef18342c9b54612972a718..005983d56b283e54e2cf450f1e9f985a
  
      private static int fetchDistanceFromSiteApi(int jenkinsBuild, @Nullable String siteApiVersion) {
 diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
-index 398dd8cf321cd2f0ba68a80e18014bb020138f78..e8116288acd1a28903be9dacc11d9197f3d6b88e 100644
+index b69634a5cf57e4086e644819f68638d6a2ab897c..4af2cc1f0df04cb4e1b44ac5a9f6391da0641d07 100644
 --- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
 +++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
 @@ -262,7 +262,7 @@ import javax.annotation.Nullable; // Paper
@@ -192,11 +192,11 @@ index fb87620c742ff7912f5e8ccd2a7930dd605576d9..d779212cbb719a1d923a24823135c5d3
  
          if (stream != null) {
 diff --git a/src/main/java/org/purpurmc/purpur/PurpurConfig.java b/src/main/java/org/purpurmc/purpur/PurpurConfig.java
-index 76cbfb7e900bf2698776f54cfe498f4b42965221..cd60f79acdd2307bdae48a11d4f5ec3ff3fa225a 100644
+index c7c0ed8dfe58c841faf684a1fe228eeda6cd57b7..0675f0633006c6e76294b7bb7e73c589510c97dd 100644
 --- a/src/main/java/org/purpurmc/purpur/PurpurConfig.java
 +++ b/src/main/java/org/purpurmc/purpur/PurpurConfig.java
-@@ -244,7 +244,7 @@ public class PurpurConfig {
-         if (!TimingsManager.hiddenConfigs.contains("settings.seed")) TimingsManager.hiddenConfigs.add("settings.seed");
+@@ -227,7 +227,7 @@ public class PurpurConfig {
+         deathMessageOnlyBroadcastToAffectedPlayer = getBoolean("settings.broadcasts.death.only-broadcast-to-affected-player", deathMessageOnlyBroadcastToAffectedPlayer);
      }
  
 -    public static String serverModName = "Purpur";
