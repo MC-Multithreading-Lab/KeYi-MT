@@ -1,0 +1,450 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: BuildTools <unconfigured@null.spigotmc.org>
+Date: Sat, 21 Jan 2023 17:19:22 +0800
+Subject: [PATCH] Apply the lost threading fix patches
+
+
+diff --git a/src/main/java/net/minecraft/util/ClassInstanceMultiMap.java b/src/main/java/net/minecraft/util/ClassInstanceMultiMap.java
+index 526aea245dc1330641964b32f5644b97cda128d4..68bb91d7bec944e350ba55b3f4d464ec9a368c84 100644
+--- a/src/main/java/net/minecraft/util/ClassInstanceMultiMap.java
++++ b/src/main/java/net/minecraft/util/ClassInstanceMultiMap.java
+@@ -13,9 +13,9 @@ import java.util.Map;
+ import java.util.stream.Collectors;
+ 
+ public class ClassInstanceMultiMap<T> extends AbstractCollection<T> {
+-    private final Map<Class<?>, List<T>> byClass = Maps.newHashMap();
++    private final Map<Class<?>, List<T>> byClass = Maps.newConcurrentMap();
+     private final Class<T> baseClass;
+-    private final List<T> allInstances = Lists.newArrayList();
++    private final List<T> allInstances = Lists.newCopyOnWriteArrayList();
+ 
+     public ClassInstanceMultiMap(Class<T> elementType) {
+         this.baseClass = elementType;
+diff --git a/src/main/java/net/minecraft/util/ThreadingDetector.java b/src/main/java/net/minecraft/util/ThreadingDetector.java
+index b6e98aaebe57453b8eceaa633a989aa24409830f..60162cccf765800c6172d1544f2cd9bcf30cbd97 100644
+--- a/src/main/java/net/minecraft/util/ThreadingDetector.java
++++ b/src/main/java/net/minecraft/util/ThreadingDetector.java
+@@ -17,7 +17,7 @@ import org.slf4j.Logger;
+ public class ThreadingDetector {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private final String name;
+-    private final Semaphore lock = new Semaphore(1);
++    private final Semaphore lock = new Semaphore(255);
+     private final Lock stackTraceLock = new ReentrantLock();
+     @Nullable
+     private volatile Thread threadThatFailedToAcquire;
+diff --git a/src/main/java/net/minecraft/world/entity/ai/behavior/LongJumpToRandomPos.java b/src/main/java/net/minecraft/world/entity/ai/behavior/LongJumpToRandomPos.java
+index d3827215ef19f6e1e63f846d91ed00525a318c7a..71e44f4aa64b29610f424ea91a9b54b56a155736 100644
+--- a/src/main/java/net/minecraft/world/entity/ai/behavior/LongJumpToRandomPos.java
++++ b/src/main/java/net/minecraft/world/entity/ai/behavior/LongJumpToRandomPos.java
+@@ -9,6 +9,8 @@ import java.util.function.BiPredicate;
+ import java.util.function.Function;
+ import java.util.stream.Collectors;
+ import javax.annotation.Nullable;
++
++import net.himeki.mcmtfabric.parallelised.ConcurrentDoublyLinkedList;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.sounds.SoundEvent;
+@@ -40,7 +42,7 @@ public class LongJumpToRandomPos<E extends Mob> extends Behavior<E> {
+     protected final int maxLongJumpHeight;
+     protected final int maxLongJumpWidth;
+     protected final float maxJumpVelocity;
+-    protected List<LongJumpToRandomPos.PossibleJump> jumpCandidates = Lists.newArrayList();
++    protected List<LongJumpToRandomPos.PossibleJump> jumpCandidates = Lists.newCopyOnWriteArrayList();
+     protected Optional<Vec3> initialPosition = Optional.empty();
+     @Nullable
+     protected Vec3 chosenJump;
+@@ -103,7 +105,7 @@ public class LongJumpToRandomPos<E extends Mob> extends Behavior<E> {
+             return !blockPos2.equals(blockPos);
+         }).map((blockPos2) -> {
+             return new LongJumpToRandomPos.PossibleJump(blockPos2.immutable(), Mth.ceil(blockPos.distSqr(blockPos2)));
+-        }).collect(Collectors.toCollection(Lists::newArrayList));
++        }).collect(Collectors.toCollection(Lists::newCopyOnWriteArrayList));
+     }
+ 
+     @Override
+diff --git a/src/main/java/net/minecraft/world/entity/ai/sensing/NearestLivingEntitySensor.java b/src/main/java/net/minecraft/world/entity/ai/sensing/NearestLivingEntitySensor.java
+index d8cf99a3014a4b8152ae819fa663c2fdf34dce57..00e3da29a151a415f10f226ff1054bbb688357de 100644
+--- a/src/main/java/net/minecraft/world/entity/ai/sensing/NearestLivingEntitySensor.java
++++ b/src/main/java/net/minecraft/world/entity/ai/sensing/NearestLivingEntitySensor.java
+@@ -1,9 +1,14 @@
+ package net.minecraft.world.entity.ai.sensing;
+ 
++import cc.keyimc.keyi.utils.EntityPositionCache;
+ import com.google.common.collect.ImmutableSet;
+ import java.util.Comparator;
+ import java.util.List;
+ import java.util.Set;
++import java.util.concurrent.atomic.AtomicBoolean;
++import com.google.common.collect.Lists;
++import it.unimi.dsi.fastutil.objects.ObjectArrayList;
++import it.unimi.dsi.fastutil.objects.ObjectLists;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.world.entity.LivingEntity;
+ import net.minecraft.world.entity.ai.Brain;
+@@ -12,16 +17,29 @@ import net.minecraft.world.entity.ai.memory.NearestVisibleLivingEntities;
+ import net.minecraft.world.phys.AABB;
+ 
+ public class NearestLivingEntitySensor<T extends LivingEntity> extends Sensor<T> {
++    private final List<EntityPositionCache> entitiesCache = ObjectLists.synchronize(new ObjectArrayList<>());
++    private final AtomicBoolean calling = new AtomicBoolean(false);
++
+     @Override
+     protected void doTick(ServerLevel world, T entity) {
+-        AABB aABB = entity.getBoundingBox().inflate((double)this.radiusXZ(), (double)this.radiusY(), (double)this.radiusXZ());
+-        List<LivingEntity> list = world.getEntitiesOfClass(LivingEntity.class, aABB, (e) -> {
+-            return e != entity && e.isAlive();
+-        });
+-        list.sort(Comparator.comparingDouble(entity::distanceToSqr));
+-        Brain<?> brain = entity.getBrain();
+-        brain.setMemory(MemoryModuleType.NEAREST_LIVING_ENTITIES, list);
+-        brain.setMemory(MemoryModuleType.NEAREST_VISIBLE_LIVING_ENTITIES, new NearestVisibleLivingEntities(entity, list));
++        if (!this.calling.get()){
++            this.calling.set(true);
++            try {
++                AABB aABB = entity.getBoundingBox().inflate(this.radiusXZ(), this.radiusY(), this.radiusXZ());
++                this.entitiesCache.clear();
++                this.entitiesCache.addAll(world.getEntitiesOfClass(LivingEntity.class, aABB, (e) -> e != entity && e.isAlive()).stream().map(EntityPositionCache::new).toList());
++                final EntityPositionCache compareCache = new EntityPositionCache(entity);
++                this.entitiesCache.sort(Comparator.comparingDouble(compareCache::distanceToSqr));
++
++                Brain<?> brain = entity.getBrain();
++                final List<LivingEntity> list = Lists.newCopyOnWriteArrayList();
++                list.addAll(this.entitiesCache.stream().map(EntityPositionCache::getCurrentEntity).toList());
++                brain.setMemory(MemoryModuleType.NEAREST_LIVING_ENTITIES,list);
++                brain.setMemory(MemoryModuleType.NEAREST_VISIBLE_LIVING_ENTITIES, new NearestVisibleLivingEntities(entity, list));
++            }finally {
++                this.calling.set(false);
++            }
++        }
+     }
+ 
+     protected int radiusXZ() {
+diff --git a/src/main/java/net/minecraft/world/entity/ai/sensing/PlayerSensor.java b/src/main/java/net/minecraft/world/entity/ai/sensing/PlayerSensor.java
+index 219e210611412ee00942488684d7bbe8920d157e..46ce0af4ab438207eeb035a04c82b03040cb23ab 100644
+--- a/src/main/java/net/minecraft/world/entity/ai/sensing/PlayerSensor.java
++++ b/src/main/java/net/minecraft/world/entity/ai/sensing/PlayerSensor.java
+@@ -2,10 +2,8 @@ package net.minecraft.world.entity.ai.sensing;
+ 
+ import cc.keyimc.keyi.utils.EntityPositionCache;
+ import com.google.common.collect.ImmutableSet;
+-
+ import java.util.*;
+ import java.util.concurrent.atomic.AtomicBoolean;
+-
+ import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+ import it.unimi.dsi.fastutil.objects.ObjectLists;
+ import net.minecraft.server.level.ServerLevel;
+@@ -16,7 +14,6 @@ import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+ import net.minecraft.world.entity.player.Player;
+ 
+ public class PlayerSensor extends Sensor<LivingEntity> {
+-    private final List<Player> playerList = ObjectLists.synchronize(new ObjectArrayList<>());
+     private final AtomicBoolean calling = new AtomicBoolean();
+ 
+     @Override
+diff --git a/src/main/java/net/minecraft/world/level/gameevent/EuclideanGameEventListenerRegistry.java b/src/main/java/net/minecraft/world/level/gameevent/EuclideanGameEventListenerRegistry.java
+index 878a42695ecedf0c3f2e6310e3ce44c6b6c36858..b61ed4d03848f86ca5e93b0374bbf4ca05369ad2 100644
+--- a/src/main/java/net/minecraft/world/level/gameevent/EuclideanGameEventListenerRegistry.java
++++ b/src/main/java/net/minecraft/world/level/gameevent/EuclideanGameEventListenerRegistry.java
+@@ -2,18 +2,21 @@ package net.minecraft.world.level.gameevent;
+ 
+ import com.google.common.collect.Lists;
+ import com.google.common.collect.Sets;
+-import java.util.Iterator;
+-import java.util.List;
+-import java.util.Optional;
+-import java.util.Set;
++
++import java.util.*;
++
++import it.unimi.dsi.fastutil.objects.ObjectArrayList;
++import it.unimi.dsi.fastutil.objects.ObjectList;
++import it.unimi.dsi.fastutil.objects.ObjectLists;
++import net.himeki.mcmtfabric.parallelised.ConcurrentDoublyLinkedList;
+ import net.minecraft.network.protocol.game.DebugPackets;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.world.phys.Vec3;
+ 
+ public class EuclideanGameEventListenerRegistry implements GameEventListenerRegistry {
+-    private final List<GameEventListener> listeners = Lists.newArrayList();
+-    private final Set<GameEventListener> listenersToRemove = Sets.newHashSet();
+-    private final List<GameEventListener> listenersToAdd = Lists.newArrayList();
++    private final List<GameEventListener> listeners = new ConcurrentDoublyLinkedList<>();
++    private final Set<GameEventListener> listenersToRemove = Sets.newConcurrentHashSet();
++    private final List<GameEventListener> listenersToAdd = Lists.newCopyOnWriteArrayList();
+     private boolean processing;
+     private final ServerLevel level;
+ 
+diff --git a/src/main/java/net/minecraft/world/level/levelgen/LegacyRandomSource.java b/src/main/java/net/minecraft/world/level/levelgen/LegacyRandomSource.java
+index daa03360dd7044f10b20f36023b305dc7e0bb7df..35de9e9a9d211b16a8b945bc512c128709ec6bfc 100644
+--- a/src/main/java/net/minecraft/world/level/levelgen/LegacyRandomSource.java
++++ b/src/main/java/net/minecraft/world/level/levelgen/LegacyRandomSource.java
+@@ -19,17 +19,17 @@ public class LegacyRandomSource implements BitRandomSource {
+     }
+ 
+     @Override
+-    public RandomSource fork() {
++    public synchronized RandomSource fork() {
+         return new LegacyRandomSource(this.nextLong());
+     }
+ 
+     @Override
+-    public PositionalRandomFactory forkPositional() {
++    public synchronized PositionalRandomFactory forkPositional() {
+         return new LegacyRandomSource.LegacyPositionalRandomFactory(this.nextLong());
+     }
+ 
+     @Override
+-    public void setSeed(long seed) {
++    public synchronized void setSeed(long seed) {
+         if (!this.seed.compareAndSet(this.seed.get(), (seed ^ 25214903917L) & 281474976710655L)) {
+             throw ThreadingDetector.makeThreadingException("LegacyRandomSource", (Thread)null);
+         } else {
+@@ -38,7 +38,7 @@ public class LegacyRandomSource implements BitRandomSource {
+     }
+ 
+     @Override
+-    public int next(int bits) {
++    public synchronized int next(int bits) {
+         long l = this.seed.get();
+         long m = l * 25214903917L + 11L & 281474976710655L;
+         if (!this.seed.compareAndSet(l, m)) {
+@@ -49,7 +49,7 @@ public class LegacyRandomSource implements BitRandomSource {
+     }
+ 
+     @Override
+-    public double nextGaussian() {
++    public synchronized double nextGaussian() {
+         return this.gaussianSource.nextGaussian();
+     }
+ 
+@@ -61,21 +61,21 @@ public class LegacyRandomSource implements BitRandomSource {
+         }
+ 
+         @Override
+-        public RandomSource at(int x, int y, int z) {
++        public synchronized RandomSource at(int x, int y, int z) {
+             long l = Mth.getSeed(x, y, z);
+             long m = l ^ this.seed;
+             return new LegacyRandomSource(m);
+         }
+ 
+         @Override
+-        public RandomSource fromHashOf(String seed) {
++        public synchronized RandomSource fromHashOf(String seed) {
+             int i = seed.hashCode();
+             return new LegacyRandomSource((long)i ^ this.seed);
+         }
+ 
+         @VisibleForTesting
+         @Override
+-        public void parityConfigString(StringBuilder info) {
++        public synchronized void parityConfigString(StringBuilder info) {
+             info.append("LegacyPositionalRandomFactory{").append(this.seed).append("}");
+         }
+     }
+diff --git a/src/main/java/net/minecraft/world/level/lighting/DynamicGraphMinFixedPoint.java b/src/main/java/net/minecraft/world/level/lighting/DynamicGraphMinFixedPoint.java
+index 3d5ce92c77bc107e2ec2f54dc849b99c3abf9718..88d78f77740ee436fedd5159f8bafe91c1eb5ec1 100644
+--- a/src/main/java/net/minecraft/world/level/lighting/DynamicGraphMinFixedPoint.java
++++ b/src/main/java/net/minecraft/world/level/lighting/DynamicGraphMinFixedPoint.java
+@@ -1,17 +1,16 @@
+ package net.minecraft.world.level.lighting;
+ 
+-import it.unimi.dsi.fastutil.longs.Long2ByteMap;
+-import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
+-import it.unimi.dsi.fastutil.longs.LongArrayList;
+-import it.unimi.dsi.fastutil.longs.LongLinkedOpenHashSet;
+-import it.unimi.dsi.fastutil.longs.LongList;
++import it.unimi.dsi.fastutil.longs.*;
++
++import java.util.Deque;
++import java.util.concurrent.ConcurrentLinkedDeque;
+ import java.util.function.LongPredicate;
+ import net.minecraft.util.Mth;
+ 
+ public abstract class DynamicGraphMinFixedPoint {
+     private static final int NO_COMPUTED_LEVEL = 255;
+     private final int levelCount;
+-    private final LongLinkedOpenHashSet[] queues;
++    private final Deque<Long>[] queues;
+     private final Long2ByteMap computedLevels;
+     private int firstQueuedLevel;
+     private volatile boolean hasWork;
+@@ -21,17 +20,10 @@ public abstract class DynamicGraphMinFixedPoint {
+             throw new IllegalArgumentException("Level count must be < 254.");
+         } else {
+             this.levelCount = levelCount;
+-            this.queues = new LongLinkedOpenHashSet[levelCount];
++            this.queues = new Deque[levelCount];
+ 
+             for(int i = 0; i < levelCount; ++i) {
+-                this.queues[i] = new LongLinkedOpenHashSet(expectedLevelSize, 0.5F) {
+-                    protected void rehash(int i) {
+-                        if (i > expectedLevelSize) {
+-                            super.rehash(i);
+-                        }
+-
+-                    }
+-                };
++                this.queues[i] = new ConcurrentLinkedDeque();
+             }
+ 
+             this.computedLevels = new Long2ByteOpenHashMap(expectedTotalSize, 0.5F) {
+@@ -191,8 +183,8 @@ public abstract class DynamicGraphMinFixedPoint {
+         } else {
+             while(this.firstQueuedLevel < this.levelCount && maxSteps > 0) {
+                 --maxSteps;
+-                LongLinkedOpenHashSet longLinkedOpenHashSet = this.queues[this.firstQueuedLevel];
+-                long l = longLinkedOpenHashSet.removeFirstLong();
++                Deque<Long> longLinkedOpenHashSet = this.queues[this.firstQueuedLevel];
++                long l = longLinkedOpenHashSet.removeFirst();
+                 int i = Mth.clamp(this.getLevel(l), 0, this.levelCount - 1);
+                 if (longLinkedOpenHashSet.isEmpty()) {
+                     this.checkFirstQueuedLevel(this.levelCount);
+diff --git a/src/main/java/net/minecraft/world/level/pathfinder/BinaryHeap.java b/src/main/java/net/minecraft/world/level/pathfinder/BinaryHeap.java
+index 27b9cefc172b391824ead382a712b8b9b1ddfe45..c949325dc9b21d8a75ee639210911c61616949c8 100644
+--- a/src/main/java/net/minecraft/world/level/pathfinder/BinaryHeap.java
++++ b/src/main/java/net/minecraft/world/level/pathfinder/BinaryHeap.java
+@@ -4,10 +4,8 @@ public class BinaryHeap {
+     private Node[] heap = new Node[128];
+     private int size;
+ 
+-    public Node insert(Node node) {
+-        if (node.heapIdx >= 0) {
+-            throw new IllegalStateException("OW KNOWS!");
+-        } else {
++    public synchronized Node insert(Node node) {
++        if (node.heapIdx < 0) {
+             if (this.size == this.heap.length) {
+                 Node[] nodes = new Node[this.size << 1];
+                 System.arraycopy(this.heap, 0, nodes, 0, this.size);
+@@ -17,19 +15,19 @@ public class BinaryHeap {
+             this.heap[this.size] = node;
+             node.heapIdx = this.size;
+             this.upHeap(this.size++);
+-            return node;
+         }
++        return node;
+     }
+ 
+-    public void clear() {
++    public synchronized void clear() {
+         this.size = 0;
+     }
+ 
+-    public Node peek() {
++    public synchronized Node peek() {
+         return this.heap[0];
+     }
+ 
+-    public Node pop() {
++    public synchronized Node pop() {
+         Node node = this.heap[0];
+         this.heap[0] = this.heap[--this.size];
+         this.heap[this.size] = null;
+@@ -41,7 +39,7 @@ public class BinaryHeap {
+         return node;
+     }
+ 
+-    public void remove(Node node) {
++    public synchronized void remove(Node node) {
+         this.heap[node.heapIdx] = this.heap[--this.size];
+         this.heap[this.size] = null;
+         if (this.size > node.heapIdx) {
+@@ -55,7 +53,7 @@ public class BinaryHeap {
+         node.heapIdx = -1;
+     }
+ 
+-    public void changeCost(Node node, float weight) {
++    public synchronized void changeCost(Node node, float weight) {
+         float f = node.f;
+         node.f = weight;
+         if (weight < f) {
+@@ -66,7 +64,7 @@ public class BinaryHeap {
+ 
+     }
+ 
+-    public int size() {
++    public synchronized int size() {
+         return this.size;
+     }
+ 
+@@ -135,11 +133,11 @@ public class BinaryHeap {
+         node.heapIdx = index;
+     }
+ 
+-    public boolean isEmpty() {
++    public synchronized boolean isEmpty() {
+         return this.size == 0;
+     }
+ 
+-    public Node[] getHeap() {
++    public synchronized Node[] getHeap() {
+         Node[] nodes = new Node[this.size()];
+         System.arraycopy(this.heap, 0, nodes, 0, this.size());
+         return nodes;
+diff --git a/src/main/java/net/minecraft/world/level/pathfinder/FlyNodeEvaluator.java b/src/main/java/net/minecraft/world/level/pathfinder/FlyNodeEvaluator.java
+index b0bae04ab5a93dd4cf1eeeb02bed1e508e1f2913..d427735eff0056c171591709829d0bb76f7bb6f3 100644
+--- a/src/main/java/net/minecraft/world/level/pathfinder/FlyNodeEvaluator.java
++++ b/src/main/java/net/minecraft/world/level/pathfinder/FlyNodeEvaluator.java
+@@ -1,6 +1,7 @@
+ package net.minecraft.world.level.pathfinder;
+ 
+ import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
++import it.unimi.dsi.fastutil.longs.Long2ObjectMaps;
+ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+ import java.util.EnumSet;
+ import java.util.List;
+@@ -15,7 +16,7 @@ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.phys.AABB;
+ 
+ public class FlyNodeEvaluator extends WalkNodeEvaluator {
+-    private final Long2ObjectMap<BlockPathTypes> pathTypeByPosCache = new Long2ObjectOpenHashMap<>();
++    private final Long2ObjectMap<BlockPathTypes> pathTypeByPosCache = Long2ObjectMaps.synchronize(new Long2ObjectOpenHashMap<>());
+     private static final float SMALL_MOB_INFLATED_START_NODE_BOUNDING_BOX = 1.5F;
+     private static final int MAX_START_NODE_CANDIDATES = 10;
+ 
+diff --git a/src/main/java/net/minecraft/world/level/pathfinder/NodeEvaluator.java b/src/main/java/net/minecraft/world/level/pathfinder/NodeEvaluator.java
+index a8a2594b8f5b3ebf6a1f918c7d822ad35b051b17..c614bcfc2bbbbccc7c4aac9389d4780478e739d2 100644
+--- a/src/main/java/net/minecraft/world/level/pathfinder/NodeEvaluator.java
++++ b/src/main/java/net/minecraft/world/level/pathfinder/NodeEvaluator.java
+@@ -1,6 +1,7 @@
+ package net.minecraft.world.level.pathfinder;
+ 
+ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
++import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
+ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.util.Mth;
+@@ -11,7 +12,7 @@ import net.minecraft.world.level.PathNavigationRegion;
+ public abstract class NodeEvaluator {
+     protected PathNavigationRegion level;
+     protected Mob mob;
+-    protected final Int2ObjectMap<Node> nodes = new Int2ObjectOpenHashMap<>();
++    protected final Int2ObjectMap<Node> nodes = Int2ObjectMaps.synchronize(new Int2ObjectOpenHashMap<>());
+     protected int entityWidth;
+     protected int entityHeight;
+     protected int entityDepth;
+diff --git a/src/main/java/net/minecraft/world/level/pathfinder/SwimNodeEvaluator.java b/src/main/java/net/minecraft/world/level/pathfinder/SwimNodeEvaluator.java
+index 6084631b5b502279b84f190dc62fc76b770e368e..f526adbd31e65fc74af48f6137d293a7a7ceafbb 100644
+--- a/src/main/java/net/minecraft/world/level/pathfinder/SwimNodeEvaluator.java
++++ b/src/main/java/net/minecraft/world/level/pathfinder/SwimNodeEvaluator.java
+@@ -2,6 +2,7 @@ package net.minecraft.world.level.pathfinder;
+ 
+ import com.google.common.collect.Maps;
+ import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
++import it.unimi.dsi.fastutil.longs.Long2ObjectMaps;
+ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+ import java.util.Map;
+ import javax.annotation.Nullable;
+@@ -17,7 +18,7 @@ import net.minecraft.world.level.material.FluidState;
+ 
+ public class SwimNodeEvaluator extends NodeEvaluator {
+     private final boolean allowBreaching;
+-    private final Long2ObjectMap<BlockPathTypes> pathTypesByPosCache = new Long2ObjectOpenHashMap<>();
++    private final Long2ObjectMap<BlockPathTypes> pathTypesByPosCache = Long2ObjectMaps.synchronize(new Long2ObjectOpenHashMap<>());
+ 
+     public SwimNodeEvaluator(boolean canJumpOutOfWater) {
+         this.allowBreaching = canJumpOutOfWater;
