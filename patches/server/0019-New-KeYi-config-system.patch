@@ -176,7 +176,7 @@ index 0000000000000000000000000000000000000000..72720a4893fc010c2076476a0f239cd6
 +    }
 +}
 diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
-index 8aeb2aa9ccba986163441cc428c2804de438288c..b217cb396b3f6e79c968a5614cce0459bb818445 100644
+index 9f4a087c6b75e00a14e15dd23d0ce13b7cb2eb56..c13b82b7996297108858e383bc9c2da314f98203 100644
 --- a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
 +++ b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
 @@ -63,6 +63,7 @@ import org.bukkit.event.server.ServerCommandEvent;

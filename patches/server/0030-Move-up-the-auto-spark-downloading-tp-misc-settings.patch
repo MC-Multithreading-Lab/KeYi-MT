@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: BuildTools <unconfigured@null.spigotmc.org>
+Date: Sat, 21 Jan 2023 17:42:19 +0800
+Subject: [PATCH] Move up the auto spark downloading tp misc settings
+
+
+diff --git a/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java b/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java
+index 18f075e14c9fe597eb57dc1ab5137b11c8f430e0..5c748ec60c87d97ae8224a169de5944fddc3ed41 100644
+--- a/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java
++++ b/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java
+@@ -104,6 +104,7 @@ public class KGlobalConfig {
+         rootUserWarning = get("misc.root-user-warning", rootUserWarning);
+         offlineModeWarning = get("misc.offline-mode-warning", offlineModeWarning);
+         proxyUnsafeWarning = get("misc.proxy-unsafe-warning", proxyUnsafeWarning);
++        autoDownloadSpark = get("misc.auto-download=spark",autoDownloadSpark);
+ 
+         //Optimizations
+         parallelEntity = get("optimizations.enable-parallel-entity",parallelEntity);
+@@ -116,9 +117,6 @@ public class KGlobalConfig {
+         //Debug
+         awaitParallelEntity = get("debug.await-parallel-entity-tasks",awaitParallelEntity);
+ 
+-        //Misc
+-        autoDownloadSpark = get("misc.auto-download=spark",autoDownloadSpark);
+-
+         initComments();
+     }
+ 

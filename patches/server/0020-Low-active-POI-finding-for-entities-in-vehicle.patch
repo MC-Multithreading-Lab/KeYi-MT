@@ -20,7 +20,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 diff --git a/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java b/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java
-index 3a82d6bcd92c497ce21e5fd3cf569d5794aedb2e..9f6a8841390b6982efb3ebb21ced137c780e5d1d 100644
+index 72720a4893fc010c2076476a0f239cd625ac3175..19056939a61b019c742487c566bdcc79c6bdd7fc 100644
 --- a/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java
 +++ b/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java
 @@ -60,6 +60,7 @@ public class KGlobalConfig {

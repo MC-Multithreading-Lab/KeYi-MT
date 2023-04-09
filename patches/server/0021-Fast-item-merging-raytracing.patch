@@ -5,7 +5,7 @@ Subject: [PATCH] Fast item merging raytracing
 
 
 diff --git a/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java b/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java
-index 9f6a8841390b6982efb3ebb21ced137c780e5d1d..0e3db3ab79b3712704350aefbbf07f966a3fb083 100644
+index 19056939a61b019c742487c566bdcc79c6bdd7fc..5e01dfe18789ce3815ce1c36233ef89265584d44 100644
 --- a/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java
 +++ b/src/main/java/cc/keyimc/keyi/config/KGlobalConfig.java
 @@ -61,6 +61,7 @@ public class KGlobalConfig {

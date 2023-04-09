@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: BuildTools <unconfigured@null.spigotmc.org>
+Date: Sat, 21 Jan 2023 16:47:40 +0800
+Subject: [PATCH] Fix some errors
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 981a3f7549cc3fe35f02b3cfae9158b8e56204c6..4a823844cc97ce32f972343a095b1dca3c6b296d 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1,10 +1,9 @@
+ package net.minecraft.server.level;
+ 
+-import cc.keyimc.keyi.Hearse;
+-import cc.keyimc.keyi.HearseConfig;
+ import cc.keyimc.keyi.concurrent.WorkerThreadPoolExecutor;
+ import cc.keyimc.keyi.concurrent.threadfactory.DefaultWorkerFactory;
+ import cc.keyimc.keyi.config.KGlobalConfig;
++import cc.keyimc.keyi.server.PublicConstants;
+ import com.google.common.collect.*;
+ import com.google.common.collect.ImmutableList.Builder;
+ import com.google.gson.JsonElement;
+@@ -54,7 +53,6 @@ import net.minecraft.world.level.storage.LevelStorageSource;
+ import org.apache.commons.lang3.mutable.MutableObject;
+ import org.bukkit.craftbukkit.generator.CustomChunkGenerator;
+ import org.slf4j.Logger;
+-
+ import javax.annotation.Nullable;
+ import java.io.IOException;
+ import java.io.Writer;
+@@ -1215,7 +1213,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                         TimeUnit.SECONDS,
+                         new LinkedBlockingQueue<>(),
+                         new DefaultWorkerFactory("tracker-concurrent"));
+-                Hearse.getWorkerManager().addWorker("tracker",concurrentTrackWorker);
++                PublicConstants.WORKER_MANAGER.addWorker("tracker",concurrentTrackWorker);
+             }
+             isInited.set(true);
+         }
